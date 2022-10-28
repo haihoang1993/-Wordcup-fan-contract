@@ -44,13 +44,23 @@ describe('NFT Fan', function () {
             id:0, gender:0, avatar:'link', name:'messi',country:'arg',yearOfBirth:1987, dateOfBirth:'26/06'
         })
         await instanceNFT.mintNFTrandom()
+        await instanceNFT.mintNFTrandom()
     });
     
     it('get list my nft ', async function () {
-        const data =  await instanceNFT.getPlayersOf(accounts[0].address)
+        // const data =  await instanceNFT.getPlayersOf(accounts[0].address)
+        const data =  await instanceNFT.getTokensOf(accounts[0].address)
         console.log('data',data);
     });
 
-    
+    it('sale nft', async function(){
+        await instanceNFT.placeOrder(1, ethers.utils.parseEther("200"));
+        await instanceNFT.placeOrder(2, ethers.utils.parseEther("100"));
+        await instanceNFT.placeOrder(3, ethers.utils.parseEther("300"));
+    })
+    it('market', async function(){
+        const data= await instanceNFT.getMarketsSort(1,1,1,1);
+        console.log('market:',data);
+    })
     
 });

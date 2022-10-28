@@ -206,11 +206,11 @@ contract FanNFT is ERC721, NFTinterface {
         emit FillOrder(_tokenId, _msgSender());
     }
 
-
-     function sort_array(
-        ItemSale[] memory arr,
-        bool DESC
-    ) internal view returns (ItemSale[] memory) {
+    function sort_array(ItemSale[] memory arr, bool DESC)
+        internal
+        view
+        returns (ItemSale[] memory)
+    {
         uint256 l = arr.length;
         for (uint256 i = 0; i < l; i++) {
             for (uint256 j = i + 1; j < l; j++) {
@@ -249,7 +249,10 @@ contract FanNFT is ERC721, NFTinterface {
     {
         uint256 size = tokenSales.length();
         ItemSale[] memory itemsAll = new ItemSale[](size);
-        MarketsItem = sort_array(itemsAll,false);
+        for (uint256 index = 0; index < size; index++) {
+            itemsAll[index] = markets[tokenSales.at(index)];
+        }
+        MarketsItem = sort_array(itemsAll, false);
         total = size;
         pageCurent = page;
     }
