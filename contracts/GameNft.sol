@@ -107,6 +107,13 @@ contract FanNFT is ERC721, NFTinterface {
         _createPlayer(_address, pl);
     }
 
+    function mintNFTrandom() public {
+        Player[] memory data= manager.getDataMintPlayer();
+        require(data.length>0);
+        uint256 ran = random(0, data.length);
+        _createPlayer(msg.sender, data[ran]);
+    }
+
     function burnChar(uint256 id) external override onlyPromise {
         _burn(id);
     }

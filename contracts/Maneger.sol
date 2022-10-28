@@ -83,6 +83,9 @@ contract Manager is ManagerInterface {
      }
 
      function setDataMint(Player[] memory list) public {
-         dataMint=list;
+        //  dataMint[0]=list[0];
+        for (uint256 index = 0; index < list.length; index++) {
+            dataMint.push(list[index]);
+        }
      }
 }

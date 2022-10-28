@@ -23,15 +23,34 @@ describe('NFT Fan', function () {
         expect(check).to.equal(true);
     });
 
+    it('set data mint player', async function () {
+        await instanceManager.setDataMint([
+           {
+               id:0, gender:0, avatar:'link', name:'messi',country:'arg',yearOfBirth:1987, dateOfBirth:'26/06'
+           },
+           {
+               id:0, gender:0, avatar:'link', name:'CR7',country:'PO',yearOfBirth:1987, dateOfBirth:'26/06'
+           },
+           {
+               id:0, gender:0, avatar:'link', name:'Halan',country:'A*',yearOfBirth:1987, dateOfBirth:'26/06'
+           },
+       ])
+       const data = await instanceManager.getDataMintPlayer();
+       expect(data.length).to.equal(3);
+   });
+
     it('create nft ', async function () {
         await instanceNFT.createPlayer(accounts[0].address,{
             id:0, gender:0, avatar:'link', name:'messi',country:'arg',yearOfBirth:1987, dateOfBirth:'26/06'
         })
+        await instanceNFT.mintNFTrandom()
     });
     
     it('get list my nft ', async function () {
         const data =  await instanceNFT.getPlayersOf(accounts[0].address)
         console.log('data',data);
     });
+
+    
     
 });
