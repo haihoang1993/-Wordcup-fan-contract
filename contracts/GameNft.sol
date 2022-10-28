@@ -33,8 +33,10 @@ contract FanNFT is ERC721, NFTinterface {
     mapping(uint256 => Player) internal players;
     mapping(uint256 => ItemSale) internal markets;
 
-    IERC20 public tokenERC20;
+    EnumerableSet.UintSet private tokenSales;
+    mapping(address => EnumerableSet.UintSet) private sellerTokens;
 
+    IERC20 public tokenERC20;
 
     constructor(
         string memory _name,
@@ -47,8 +49,7 @@ contract FanNFT is ERC721, NFTinterface {
 
     modifier onlyPromise() {
         require(
-            ownerContract == _msgSender() ||
-                manager.checkManager(msg.sender)
+            ownerContract == _msgSender() || manager.checkManager(msg.sender)
         );
         _;
     }
@@ -62,8 +63,8 @@ contract FanNFT is ERC721, NFTinterface {
         uint256 nextTokenId = _getNextTokenId();
         _mint(receiver, nextTokenId);
         players[nextTokenId] = player;
-        player.id=nextTokenId;
-        emit CreatePlayer (nextTokenId, receiver);
+        player.id = nextTokenId;
+        emit CreatePlayer(nextTokenId, receiver);
     }
 
     function getPlayersOf(address _addrees)
@@ -83,7 +84,7 @@ contract FanNFT is ERC721, NFTinterface {
         Player memory pl = players[id];
         return pl;
     }
-    
+
     /**
      * @dev calculates the next token ID based on value of latestTokenId
      * @return uint256 for the next token ID
@@ -108,8 +109,8 @@ contract FanNFT is ERC721, NFTinterface {
     }
 
     function mintNFTrandom() public {
-        Player[] memory data= manager.getDataMintPlayer();
-        require(data.length>0);
+        Player[] memory data = manager.getDataMintPlayer();
+        require(data.length > 0);
         uint256 ran = random(0, data.length);
         _createPlayer(msg.sender, data[ran]);
     }
@@ -150,5 +151,106 @@ contract FanNFT is ERC721, NFTinterface {
         randomnumber = randomnumber + from;
         nonce++;
         return randomnumber;
+    }
+
+    function placeOrder(uint256 _tokenId, uint256 _price) public {
+        require(ownerOf(_tokenId) == _msgSender(), "not own");
+        require(_price > 0, "nothing is free");
+
+        tokenOrder(_tokenId, true, _price);
+
+        emit PlaceOrder(_tokenId, _msgSender(), _price);
+    }
+
+    function tokenOrder(
+        uint256 _tokenId,
+        bool _sell,
+        uint256 _price
+    ) internal {
+        ItemSale memory itemSale = markets[_tokenId];
+        if (_sell) {
+            transferFrom(_msgSender(), address(this), _tokenId);
+            tokenSales.add(_tokenId);
+            sellerTokens[_msgSender()].add(_tokenId);
+
+            markets[_tokenId] = ItemSale({
+                tokenId: _tokenId,
+                price: _price,
+                owner: _msgSender()
+            });
+        } else {
+            this.transferFrom(address(this), _msgSender(), _tokenId);
+            tokenSales.remove(_tokenId);
+            sellerTokens[itemSale.owner].remove(_tokenId);
+            markets[_tokenId] = ItemSale({
+                tokenId: 0,
+                price: 0,
+                owner: address(0)
+            });
+        }
+    }
+
+    function fillOrder(uint256 _tokenId) public {
+        require(tokenSales.contains(_tokenId), "not sale");
+        ItemSale memory itemSale = markets[_tokenId];
+        uint256 feeMarket = itemSale.price.mul(manager.feeMarketRate()).div(
+            manager.divPercent()
+        );
+        tokenERC20.transferFrom(_msgSender(), manager.feeAddress(), feeMarket);
+        tokenERC20.transferFrom(
+            _msgSender(),
+            itemSale.owner,
+            itemSale.price.sub(feeMarket)
+        );
+        tokenOrder(_tokenId, false, 0);
+        emit FillOrder(_tokenId, _msgSender());
+    }
+
+
+     function sort_array(
+        ItemSale[] memory arr,
+        bool DESC
+    ) internal view returns (ItemSale[] memory) {
+        uint256 l = arr.length;
+        for (uint256 i = 0; i < l; i++) {
+            for (uint256 j = i + 1; j < l; j++) {
+                if (DESC) {
+                    bool check = (arr[i].price < arr[j].price);
+                    if (check) {
+                        ItemSale memory temp = arr[i];
+                        arr[i] = arr[j];
+                        arr[j] = temp;
+                    }
+                } else {
+                    if (arr[i].price > arr[j].price) {
+                        ItemSale memory temp = arr[i];
+                        arr[i] = arr[j];
+                        arr[j] = temp;
+                    }
+                }
+            }
+        }
+        return arr;
+    }
+
+    function getMarketsSort(
+        uint256 typeSort,
+        uint256 typeRare,
+        uint256 page,
+        uint256 perPage
+    )
+        external
+        view
+        returns (
+            ItemSale[] memory MarketsItem,
+            uint256 pageCurent,
+            uint256 total
+        )
+    {
+        uint256 size = tokenSales.length();
+        ItemSale[] memory itemsAll = new ItemSale[](size);
+        MarketsItem = sort_array(itemsAll,false);
+        total = size;
+        pageCurent = page;
     }
 }
