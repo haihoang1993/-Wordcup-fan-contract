@@ -1,0 +1,425 @@
+// SPDX-License-Identifier: UNLICENSED
+
+pragma solidity ^0.8.0;
+pragma abicoder v2;
+
+import "./NFTinterface.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "./ERC721.sol";
+import "./Utils.sol";
+
+contract GlogryNFT is ERC721, NFTinterface {
+    using SafeMath for uint256;
+    using SafeERC20 for IERC20;
+    using EnumerableSet for EnumerableSet.UintSet;
+
+    event PlaceOrder(uint256 indexed tokenId, address seller, uint256 price);
+    event CancelOrder(uint256 indexed tokenId, address seller);
+
+    event UpdatePrice(
+        uint256 indexed tokenId,
+        address seller,
+        uint256 newPrice
+    );
+
+    event Gift(address _address, uint256 idNinja);
+    event FillOrder(uint256 indexed tokenId, address seller);
+    event CreateGlory(uint256 indexed tokenId, Rare, address buyer);
+
+    uint256 public latestTokenId;
+    mapping(uint256 => bool) public isEvolved;
+
+    mapping(uint256 => GoloryChar) internal gloryChars;
+    mapping(uint256 => ItemSale) internal markets;
+
+    EnumerableSet.UintSet private tokenSales;
+    mapping(address => EnumerableSet.UintSet) private sellerTokens;
+
+    IERC20 public tokenERC20;
+    address private contractFight;
+
+    constructor(
+        string memory _name,
+        string memory _symbol,
+        address _manager,
+        address _tokenErc20
+    ) ERC721(_name, _symbol, _manager) {
+        tokenERC20 = IERC20(_tokenErc20);
+    }
+
+    modifier onlyPromise() {
+        require(
+            ownerContract == _msgSender() ||
+                contractFight == _msgSender() ||
+                manager.checkManager(msg.sender)
+        );
+        _;
+    }
+
+    function _mint(address to, uint256 tokenId) internal override(ERC721) {
+        super._mint(to, tokenId);
+        _incrementTokenId();
+    }
+
+    function setContractFight(address _address) public {
+        require(msg.sender == ownerContract);
+        contractFight = _address;
+    }
+
+    function orderChests(uint256 typeChests, uint256 amount) public {
+        require(typeChests > 0 && typeChests < 4);
+        (uint256 priceBlue, uint256 priceGreen, uint256 priceRed) = manager
+            .getPrice();
+        uint256 price = typeChests == 1
+            ? priceBlue.mul(amount)
+            : typeChests == 2
+            ? priceGreen.mul(amount)
+            : priceRed.mul(amount);
+        tokenERC20.transferFrom(msg.sender, manager.feeAddress(), price);
+        manager.setChests(msg.sender, typeChests.sub(1), amount, true);
+    }
+
+    function openChests(uint256 typeChests) public {
+        require(typeChests > 0 && typeChests < 4);
+        (uint256 blueChests, uint256 greenChests, uint256 redChests) = manager
+            .getPlayerOf(msg.sender);
+        require(
+            (typeChests == 1 && blueChests > 0) ||
+                (typeChests == 2 && greenChests > 0) ||
+                (typeChests == 3 && redChests > 0)
+        );
+        uint256 ran = 0;
+        if (typeChests == 1) {
+            ran = random(0, 3);
+        } else if (typeChests == 2) {
+            ran = random(0, 6);
+        } else {
+            ran = random(3, 6);
+        }
+        manager.setChests(msg.sender, typeChests.sub(1), 1, false);
+        _createChar(msg.sender, Rare(ran >= 6 ? 5 : ran));
+    }
+
+    function _createChar(address receiver, Rare rare) internal {
+        uint256 nextTokenId = _getNextTokenId();
+        _mint(receiver, nextTokenId);
+        gloryChars[nextTokenId] = GoloryChar({
+            id: nextTokenId,
+            rare: rare,
+            countFight: 0,
+            countFightUsed: 0,
+            timeLastFight: 0
+        });
+        emit CreateGlory(nextTokenId, rare, receiver);
+    }
+
+    function getgloryCharsOf(address _addrees)
+        public
+        view
+        returns (GoloryChar[] memory)
+    {
+        uint256[] memory ids = getTokensOf(_addrees);
+        GoloryChar[] memory arr = new GoloryChar[](ids.length);
+        for (uint256 index = 0; index < ids.length; index++) {
+            arr[index] = gloryChars[ids[index]];
+        }
+        return arr;
+    }
+
+    function getChar(uint256 id) public view returns (GoloryChar memory) {
+        GoloryChar memory ninja = gloryChars[id];
+        return ninja;
+    }
+
+    function placeOrder(uint256 _tokenId, uint256 _price) public {
+        require(ownerOf(_tokenId) == _msgSender(), "not own");
+        require(_price > 0, "nothing is free");
+
+        tokenOrder(_tokenId, true, _price);
+
+        emit PlaceOrder(_tokenId, _msgSender(), _price);
+    }
+
+    function cancelOrder(uint256 _tokenId) public {
+        require(tokenSales.contains(_tokenId), "not sale");
+        ItemSale memory itemSale = markets[_tokenId];
+        require(itemSale.owner == _msgSender(), "not own");
+        tokenOrder(_tokenId, false, 0);
+
+        emit CancelOrder(_tokenId, _msgSender());
+    }
+
+    function fillOrder(uint256 _tokenId) public {
+        require(tokenSales.contains(_tokenId), "not sale");
+        ItemSale memory itemSale = markets[_tokenId];
+        uint256 feeMarket = itemSale.price.mul(manager.feeMarketRate()).div(
+            manager.divPercent()
+        );
+        tokenERC20.transferFrom(_msgSender(), manager.feeAddress(), feeMarket);
+        tokenERC20.transferFrom(
+            _msgSender(),
+            itemSale.owner,
+            itemSale.price.sub(feeMarket)
+        );
+        tokenOrder(_tokenId, false, 0);
+        emit FillOrder(_tokenId, _msgSender());
+    }
+
+    function getCharacterMarkets(uint256 page, uint256 perPage)
+        external
+        view
+        override
+        returns (
+            ItemSale[] memory MarketsItem,
+            uint256 pageCurent,
+            uint256 total
+        )
+    {
+        uint256 size = tokenSales.length();
+        uint256 _page = page == 0 ? 1 : page;
+        uint256 startIndex = _page.sub(1).mul(perPage);
+        uint256 endIndex = perPage.mul(_page);
+        endIndex = endIndex >= size ? size : endIndex;
+
+        ItemSale[] memory listItems = new ItemSale[](endIndex.sub(startIndex));
+        for (uint256 index = startIndex; index < endIndex; index++) {
+            listItems[index.sub(perPage.mul(_page.sub(1)))] = markets[
+                tokenSales.at(index)
+            ];
+        }
+        MarketsItem = listItems;
+        total = size;
+        pageCurent = page;
+    }
+
+    function getMarketsSort(
+        uint256 typeSort,
+        uint256 typeRare,
+        uint256 page,
+        uint256 perPage
+    )
+        external
+        view
+        override
+        returns (
+            ItemSale[] memory MarketsItem,
+            uint256 pageCurent,
+            uint256 total
+        )
+    {
+        uint256 size = tokenSales.length();
+        ItemSale[] memory itemsAll = new ItemSale[](size);
+        bool isFilter = false;
+        if (typeSort > 1 && typeSort < 5) {
+            for (uint256 index = 0; index < size; index++) {
+                itemsAll[index] = markets[tokenSales.at(index)];
+            }
+            itemsAll = sort_array(itemsAll, typeSort >= 3, typeSort == 4);
+            if (typeRare <= 6) {
+                itemsAll = filter(itemsAll, typeRare, false);
+                isFilter = true;
+            }
+            size = itemsAll.length;
+        }
+        if (typeSort <= 1) {
+            if (typeRare < 6) {
+                itemsAll = filter(itemsAll, typeRare, true);
+                isFilter = true;
+                size = itemsAll.length;
+            }
+        }
+
+        uint256 _page = page == 0 ? 1 : page;
+        uint256 startIndex = _page.sub(1).mul(perPage);
+        uint256 endIndex = perPage.mul(_page);
+        endIndex = endIndex >= size ? size : endIndex;
+        uint256 temp = typeSort;
+        uint256 t = perPage;
+        ItemSale[] memory listItems = new ItemSale[](endIndex.sub(startIndex));
+        for (uint256 index = startIndex; index < endIndex; index++) {
+            ItemSale memory e = (temp <= 1 && !isFilter)
+                ? markets[tokenSales.at(index)]
+                : itemsAll[index];
+            uint256 i = index.sub(t.mul(_page.sub(1)));
+            listItems[i] = e;
+        }
+        MarketsItem = listItems;
+        total = size;
+        pageCurent = page;
+    }
+
+    function filter(
+        ItemSale[] memory list,
+        uint256 tRare,
+        bool isAll
+    ) public view returns (ItemSale[] memory) {
+        Rare typeRare = tRare < 6 ? Rare(tRare) : Rare(0);
+        ItemSale[] memory arr = new ItemSale[](
+            !isAll ? list.length : tokenSales.length()
+        );
+        uint256 size = 0;
+        for (uint256 index = 0; index < arr.length; index++) {
+            ItemSale memory itemCheck = isAll
+                ? markets[tokenSales.at(index)]
+                : list[index];
+            //  bool check= isStrLevel ? itemCheck.strengthLevel==_strengthLevel : itemCheck.ninja==typeNinja;
+            bool check = (tRare < 6 && itemCheck.rare == typeRare);
+            if (check) {
+                arr[size] = isAll ? markets[tokenSales.at(index)] : list[index];
+                size++;
+            }
+        }
+        ItemSale[] memory listNew = new ItemSale[](size);
+        for (uint256 index = 0; index < size; index++) {
+            listNew[index] = arr[index];
+        }
+        return listNew;
+    }
+
+    function sort_array(
+        ItemSale[] memory arr,
+        bool DESC,
+        bool isStrLevel
+    ) internal view returns (ItemSale[] memory) {
+        uint256 l = arr.length;
+        for (uint256 i = 0; i < l; i++) {
+            for (uint256 j = i + 1; j < l; j++) {
+                if (DESC) {
+                    bool check = (arr[i].price < arr[j].price);
+                    if (check) {
+                        ItemSale memory temp = arr[i];
+                        arr[i] = arr[j];
+                        arr[j] = temp;
+                    }
+                } else {
+                    if (arr[i].price > arr[j].price) {
+                        ItemSale memory temp = arr[i];
+                        arr[i] = arr[j];
+                        arr[j] = temp;
+                    }
+                }
+            }
+        }
+        return arr;
+    }
+
+    function getMarketOf(address _address)
+        external
+        view
+        override
+        returns (ItemSale[] memory)
+    {
+        uint256 size = sellerTokens[_address].length();
+        ItemSale[] memory listItem = new ItemSale[](size);
+        for (uint256 index = 0; index < size; index++) {
+            listItem[index] = markets[sellerTokens[_address].at(index)];
+        }
+        return listItem;
+    }
+
+    function tokenOrder(
+        uint256 _tokenId,
+        bool _sell,
+        uint256 _price
+    ) internal {
+        ItemSale memory itemSale = markets[_tokenId];
+        if (_sell) {
+            transferFrom(_msgSender(), address(this), _tokenId);
+            tokenSales.add(_tokenId);
+            sellerTokens[_msgSender()].add(_tokenId);
+
+            markets[_tokenId] = ItemSale({
+                tokenId: _tokenId,
+                price: _price,
+                owner: _msgSender(),
+                rare: gloryChars[_tokenId].rare
+            });
+        } else {
+            this.transferFrom(address(this), _msgSender(), _tokenId);
+            tokenSales.remove(_tokenId);
+            sellerTokens[itemSale.owner].remove(_tokenId);
+            markets[_tokenId] = ItemSale({
+                tokenId: 0,
+                price: 0,
+                owner: address(0),
+                rare: Rare(0)
+            });
+        }
+    }
+
+    /**
+     * @dev calculates the next token ID based on value of latestTokenId
+     * @return uint256 for the next token ID
+     */
+    function _getNextTokenId() private view returns (uint256) {
+        return latestTokenId.add(1);
+    }
+
+    /**
+     * @dev increments the value of latestTokenId
+     */
+    function _incrementTokenId() private {
+        latestTokenId++;
+    }
+
+    function createCharacters(address _address, uint256 typeRare)
+        external
+        override
+        onlyPromise
+    {
+        require(typeRare < 6);
+        _createChar(_address, Rare(typeRare));
+    }
+
+    function burnChar(uint256 id) external override onlyPromise {
+        _burn(id);
+    }
+
+    function setDataCharacters(
+        uint256 id,
+        uint256 countFight,
+        uint256 countFightUsed,
+        uint256 timeLastFight
+    ) external override onlyPromise {
+        gloryChars[id].countFight = countFight;
+        gloryChars[id].countFightUsed = countFightUsed;
+        gloryChars[id].timeLastFight = timeLastFight;
+    }
+
+    function getCharactersByID(uint256 id)
+        external
+        view
+        override
+        returns (GoloryChar memory)
+    {
+        GoloryChar memory obj = getChar(id);
+        return obj;
+    }
+
+    function checkOwnerOf(address _address, uint256 idNinja)
+        external
+        view
+        override
+        returns (bool)
+    {
+        return ownerOf(idNinja) == _address;
+    }
+
+    function gift(address _address, uint256 _id) public {
+        require(ownerOf(_id) == msg.sender);
+        GoloryChar memory ninja = getChar(_id);
+        transferFrom(msg.sender, _address, _id);
+        gloryChars[_id] = ninja;
+    }
+
+    function random(uint256 from, uint256 to) private view returns (uint256) {
+        uint256 nonce = 0;
+        uint256 randomnumber = uint256(
+            keccak256(abi.encodePacked(block.timestamp, msg.sender, nonce))
+        ) % to;
+        randomnumber = randomnumber + from;
+        nonce++;
+        return randomnumber;
+    }
+}
