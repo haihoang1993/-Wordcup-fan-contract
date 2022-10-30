@@ -8,6 +8,7 @@ yarn-debug.log*
 yarn-error.log*
 
 node_modules/
+main/images/
 .env*
 !.env*.default
 .vscode/*
