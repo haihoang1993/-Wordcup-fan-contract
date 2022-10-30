@@ -2,7 +2,13 @@ const hre = require("hardhat");
 const ethers = hre.ethers;
 
 async function main() {
-    const address = '0xAccde1fFD30EbFb3E18754f8e3ABc96129AD4cfB';
+    const constructParams = {
+        name: "Fan TOken",
+        symbol: "ATM",
+        initialSupply:  hre.ethers.utils.parseEther("600000000"),
+      }
+    
+    const address = '0x6f2f220F901222929d0b30E5eD5149fb290FAc76';
     await hre.run("verify:verify", {
         address: address,
         constructorArguments: [],

@@ -1,3 +1,6 @@
 {
-    "bscTestnet.Test": "0xbca9aB43e2b8D47d53aEbbe3a13233aD9ce5479D"
+    "bscTestnet.Test": "0xbca9aB43e2b8D47d53aEbbe3a13233aD9ce5479D",
+    "bscTestnet.manager": "0xDFa26692352b94942888a10eF6C48CF74C5Aa3eb",
+    "bscTestnet.token": "0x3A5324D36979461254fBaBD27BD03C597CA0deDC",
+    "bscTestnet.nft": "0x6f2f220F901222929d0b30E5eD5149fb290FAc76"
 }

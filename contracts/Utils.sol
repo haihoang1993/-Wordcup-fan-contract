@@ -20,19 +20,5 @@ struct Player {
     string name;
     string avatar;
     string country;
-    uint256 yearOfBirth;
     string dateOfBirth;
-}
-
-struct UpgradeObj {
-    uint256 id;
-    address user;
-    uint256 time;
-    uint256 luckyCharms;
-    bool isProtectionAmulets;
-    uint256 ninjaSender;
-    uint256 ninjaSub;
-    uint256 strengthLevelUp;
-    bool isSuccess;
-    uint256 ninjaRemove;
 }
