@@ -21,4 +21,6 @@ struct Player {
     string avatar;
     string country;
     string dateOfBirth;
+    string metadata;
+    string sub;
 }
